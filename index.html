@@ -95,6 +95,8 @@
 
   /* ---------- FOCUS MODE ---------- */
   body.focus .topbar, body.focus .caption, body.focus .controls{ display:none }
+  body.focus{ overflow:hidden }
+  body.focus .stage{ padding:0; gap:0 }
   /* focus digit size is computed in JS (fitFocus) to fill the page */
   .exitHint{ display:none }
   body.focus .exitHint{ display:block; position:fixed; bottom:22px; left:0; right:0; text-align:center; font-size:10px; letter-spacing:.22em; text-transform:uppercase; color:var(--label-dim) }
@@ -389,7 +391,7 @@ function fitFocus(){
   const vw=window.innerWidth, vh=window.innerHeight;
   const portrait = vh > vw;
   document.body.classList.toggle('portrait', portrait);
-  const ratio=0.56, ig=0.10, gg=0.16, padX=28, padY=110;
+  const ratio=0.56, ig=0.10, gg=0.16, padX=24, padY=90;
   let dhW, dhH;
   if(!portrait){
     const F = n*ratio + groups*ig + (groups-1)*gg;   // horizontal width in dh units
@@ -401,7 +403,7 @@ function fitFocus(){
     const Fh = groups + (groups-1)*gg;                // stacked rows tall
     dhH = (vh - padY)/Fh;
   }
-  const dh=Math.max(60, Math.min(dhW, dhH));
+  const dh=Math.max(60, Math.min(dhW, dhH) * 0.99);
   clock.style.setProperty('--dh', dh+'px');
 }
 function enterFocus(){ document.body.classList.add('focus'); if(mode==='timer' && !running) start(); fitFocus(); setTimeout(fitFocus,120); try{document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();}catch(e){} }
