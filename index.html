@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>LCD Flip Timer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --page-bg:#0d0f0d;
+    --lcd-top-a:#bcc8af; --lcd-top-b:#aebba0;
+    --lcd-bot-a:#a4b198; --lcd-bot-b:#94a187;
+    --lit:#1b2014; --ghost:rgba(27,32,20,0.075);
+    --label:#5a6650; --label-dim:rgba(90,102,80,0.55); --accent:#9aa890;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    margin:0;
+    background:radial-gradient(120% 90% at 50% 6%, #1b1e19 0%, var(--page-bg) 60%), var(--page-bg);
+    color:var(--label);
+    font-family:'JetBrains Mono', ui-monospace, "SF Mono", Menlo, monospace;
+    min-height:100svh; display:flex; flex-direction:column;
+    -webkit-font-smoothing:antialiased; user-select:none; touch-action:manipulation;
+  }
+
+  /* ---------- TOP BAR ---------- */
+  .topbar{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; flex-wrap:wrap }
+  .modeToggle{ display:inline-flex; background:rgba(154,168,144,0.06); border:1px solid rgba(154,168,144,0.18); border-radius:999px; padding:3px }
+  .seg{ font-family:inherit; font-size:12px; letter-spacing:.06em; color:#9aa890; background:transparent; border:0; padding:9px 17px; border-radius:999px; cursor:pointer; transition:.15s }
+  .seg.active{ background:var(--accent); color:#11140f; font-weight:700 }
+  .tzwrap{ display:flex; align-items:center; gap:10px }
+  .liveclock{ font-size:14px; font-weight:500; color:#9aa890; letter-spacing:.12em }
+  body.clockmode .liveclock{ display:none }
+  .tz{ font-family:inherit; font-size:12px; letter-spacing:.03em; color:#9aa890; background:rgba(154,168,144,0.06); border:1px solid rgba(154,168,144,0.18); border-radius:10px; padding:9px 12px; cursor:pointer }
+
+  /* ---------- STAGE ---------- */
+  .stage{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:26px; padding:14px 14px 30px }
+
+  .caption{ display:flex; align-items:center; gap:9px; font-size:11px; letter-spacing:.28em; text-transform:uppercase; color:var(--label-dim); min-height:16px }
+  .runDot{ width:8px; height:8px; border-radius:50%; background:#6f7d62; opacity:.35 }
+  body.running .runDot{ background:var(--accent); animation:blink 1s steps(1) infinite }
+  @keyframes blink{ 50%{opacity:1} }
+  .capClock{ font-size:13px; letter-spacing:.34em; color:#9aa890 }
+  body:not(.clockmode) .capClock{ display:none }
+  body.clockmode .capTimer{ display:none }
+
+  /* ---------- FLIP CLOCK ---------- */
+  .clock{ display:flex; flex-direction:row; align-items:center; justify-content:center; gap:calc(var(--dh) * 0.16); --dh:clamp(124px, 29vw, 218px) }
+  .clock.six{ --dh:clamp(82px, 17.5vw, 150px) }
+  .group{ display:flex; align-items:center; justify-content:center; gap:calc(var(--dh) * 0.10) }
+  body.focus.portrait .clock{ flex-direction:column }
+  .cell{ position:relative; width:calc(var(--dh) * 0.56); height:var(--dh); perspective:calc(var(--dh) * 1.7); border-radius:14px; filter:drop-shadow(0 16px 26px rgba(0,0,0,.55)) }
+  .half, .leaf{ position:absolute; left:0; width:100%; height:50%; overflow:hidden; border:1px solid rgba(0,0,0,.45) }
+  .half.top, .leaf.leafTop{ top:0; border-bottom:none; border-radius:14px 14px 0 0; background:linear-gradient(180deg, var(--lcd-top-a), var(--lcd-top-b)); box-shadow:0 2px 0 rgba(255,255,255,.18) inset }
+  .half.bottom, .leaf.leafBottom{ bottom:0; border-top:none; border-radius:0 0 14px 14px; background:linear-gradient(180deg, var(--lcd-bot-a), var(--lcd-bot-b)); box-shadow:0 -10px 22px -14px rgba(0,0,0,.4) inset }
+  .leaf.leafBottom{ top:50%; bottom:auto }
+  .half .seven, .leaf .seven{ position:absolute; left:0; width:100%; height:200% }
+  .half.top .seven, .leaf.leafTop .seven{ top:0 }
+  .half.bottom .seven, .leaf.leafBottom .seven{ top:-100% }
+  .seven svg{ display:block; width:100%; height:100%; padding:0 14% }
+  .cell::after{ content:""; position:absolute; left:0; right:0; top:calc(50% - 1px); height:2px; z-index:3; background:linear-gradient(180deg, rgba(0,0,0,.28), rgba(255,255,255,.10)); pointer-events:none }
+  .leaf{ z-index:4; backface-visibility:hidden; transform-style:preserve-3d }
+  .leafTop{ transform-origin:center bottom }
+  .leafBottom{ transform-origin:center top; transform:rotateX(90deg) }
+  .seg{ fill:var(--ghost) }
+  .seg.on{ fill:var(--lit) }
+  body.alarm .cell{ animation:flash .5s steps(1) infinite }
+  @keyframes flash{ 50%{ filter:invert(1) hue-rotate(40deg) drop-shadow(0 16px 26px rgba(0,0,0,.55)) } }
+
+  /* ---------- CONTROLS ---------- */
+  .controls{ display:flex; flex-direction:column; align-items:center; gap:16px; width:min(600px,96vw) }
+  body.running .setrow, body.running .presets{ opacity:.38; pointer-events:none }
+  body.clockmode .setrow, body.clockmode .presets, body.clockmode .timerBtns, body.clockmode .hint{ display:none }
+
+  .setrow{ display:flex; gap:10px; flex-wrap:wrap; justify-content:center }
+  .stepper{ display:flex; align-items:center; gap:4px; background:rgba(154,168,144,0.06); border:1px solid rgba(154,168,144,0.18); border-radius:14px; padding:6px 7px }
+  .stepper .slabel{ font-size:10px; letter-spacing:.14em; color:var(--label-dim); padding:0 5px }
+  .stepper button{ font-family:inherit; font-size:20px; line-height:1; color:#c2cfb6; width:44px; height:44px; border-radius:9px; cursor:pointer; background:rgba(154,168,144,0.08); border:1px solid rgba(154,168,144,0.2); transition:.15s }
+  .stepper button:active{ background:rgba(154,168,144,0.22) }
+  .stepper .sval{ min-width:40px; text-align:center; font-size:20px; font-weight:700; color:#cfdcc4 }
+  .presets{ display:flex; gap:8px; flex-wrap:wrap; justify-content:center }
+  .chip{ font-family:inherit; font-size:12px; letter-spacing:.05em; color:#9aa890; background:rgba(154,168,144,0.06); border:1px solid rgba(154,168,144,0.18); padding:8px 13px; border-radius:999px; cursor:pointer; transition:.15s }
+  .chip:active{ background:rgba(154,168,144,0.14) }
+  .chip.active{ background:var(--accent); color:#11140f; border-color:var(--accent) }
+  .main{ display:flex; gap:10px; flex-wrap:wrap; justify-content:center }
+  .timerBtns{ display:flex; gap:10px }
+  .btn{ font-family:inherit; font-size:13px; letter-spacing:.04em; color:#c2cfb6; background:rgba(154,168,144,0.08); border:1px solid rgba(154,168,144,0.2); padding:13px 24px; border-radius:12px; cursor:pointer; transition:.15s; min-width:108px }
+  .btn:active{ background:rgba(154,168,144,0.18) }
+  .btn.primary{ background:var(--accent); color:#11140f; border-color:var(--accent); font-weight:700 }
+  .hint{ font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--label-dim); text-align:center; line-height:1.7 }
+  :focus-visible{ outline:2px solid #aebca3; outline-offset:3px; border-radius:8px }
+
+  /* ---------- FOCUS MODE ---------- */
+  body.focus .topbar, body.focus .caption, body.focus .controls{ display:none }
+  /* focus digit size is computed in JS (fitFocus) to fill the page */
+  .exitHint{ display:none }
+  body.focus .exitHint{ display:block; position:fixed; bottom:22px; left:0; right:0; text-align:center; font-size:10px; letter-spacing:.22em; text-transform:uppercase; color:var(--label-dim) }
+
+  /* ---------- ALARM ---------- */
+  #alarmLayer{ display:none }
+  body.alarm #alarmLayer{ display:flex; position:fixed; inset:0; z-index:60; flex-direction:column; align-items:center; justify-content:center; gap:20px; background:rgba(13,15,13,0.55) }
+  #alarmLayer .btn{ font-size:18px; padding:22px 56px; min-width:200px }
+  .alarmText{ font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:#cfdcc4 }
+
+  @media (prefers-reduced-motion:reduce){
+    .leaf{ transition:none !important }
+    body.running .runDot{ animation:none; opacity:.9 }
+    body.alarm .cell{ animation:none }
+  }
+  @media (max-width:480px){ .liveclock{ font-size:13px } .topbar{ padding:10px 12px } .seg{ padding:8px 13px } }
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="modeToggle" id="modeToggle">
+      <button class="seg active" data-mode="timer">Minuteur</button>
+      <button class="seg" data-mode="clock">Horloge</button>
+    </div>
+    <div class="tzwrap">
+      <span class="liveclock" id="liveTime">--:--:--</span>
+      <select id="tzSelect" class="tz" aria-label="Ville"></select>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="caption">
+      <span class="capTimer"><span class="runDot"></span><span id="statusLabel">Focus</span></span>
+      <span class="capClock" id="cityLabel">PARIS</span>
+    </div>
+
+    <div class="clock" id="clock" role="timer" aria-label="Affichage"></div>
+
+    <div class="controls">
+      <div class="setrow" id="setrow">
+        <div class="stepper">
+          <span class="slabel">HRS</span>
+          <button data-d="-3600" aria-label="Moins une heure">−</button>
+          <span class="sval" id="hVal">00</span>
+          <button data-d="3600" aria-label="Plus une heure">+</button>
+        </div>
+        <div class="stepper">
+          <span class="slabel">MIN</span>
+          <button data-d="-60" aria-label="Moins une minute">−</button>
+          <span class="sval" id="mVal">25</span>
+          <button data-d="60" aria-label="Plus une minute">+</button>
+        </div>
+        <div class="stepper">
+          <span class="slabel">SEC</span>
+          <button data-d="-5" aria-label="Moins 5 secondes">−</button>
+          <span class="sval" id="sVal">00</span>
+          <button data-d="5" aria-label="Plus 5 secondes">+</button>
+        </div>
+      </div>
+
+      <div class="presets" id="presets">
+        <button class="chip" data-min="5">05:00</button>
+        <button class="chip" data-min="15">15:00</button>
+        <button class="chip active" data-min="25">25:00</button>
+        <button class="chip" data-min="45">45:00</button>
+        <button class="chip" data-min="60">60:00</button>
+      </div>
+
+      <div class="main">
+        <span class="timerBtns">
+          <button class="btn primary" id="startBtn">START</button>
+          <button class="btn" id="resetBtn">RESET</button>
+        </span>
+        <button class="btn" id="focusBtn">FOCUS</button>
+      </div>
+
+      <div class="hint">espace = start/pause · R = reset · F = focus · ↑↓ = ±1 min</div>
+    </div>
+  </div>
+
+  <div class="exitHint">appuie sur l'écran pour quitter</div>
+
+  <div id="alarmLayer">
+    <div class="alarmText">Temps écoulé</div>
+    <button class="btn primary" id="stopAlarmBtn">STOP</button>
+  </div>
+
+<script>
+/* ---------- seven-segment ---------- */
+const T=12;
+const hseg=(x0,x1,y)=>{const h=T/2;return[[x0,y],[x0+h,y-h],[x1-h,y-h],[x1,y],[x1-h,y+h],[x0+h,y+h]].map(p=>p.join(',')).join(' ');};
+const vseg=(x,y0,y1)=>{const h=T/2;return[[x,y0],[x+h,y0+h],[x+h,y1-h],[x,y1],[x-h,y1-h],[x-h,y0+h]].map(p=>p.join(',')).join(' ');};
+const SEGS={a:hseg(16,64,10),g:hseg(16,64,70),d:hseg(16,64,130),f:vseg(12,16,64),b:vseg(68,16,64),e:vseg(12,76,124),c:vseg(68,76,124)};
+const MAP={'0':'abcdef','1':'bc','2':'abged','3':'abgcd','4':'fgbc','5':'afgcd','6':'afgecd','7':'abc','8':'abcdefg','9':'abcdfg',' ':''};
+const NS='http://www.w3.org/2000/svg';
+function makeSeven(){
+  const wrap=document.createElement('div'); wrap.className='seven';
+  const svg=document.createElementNS(NS,'svg'); svg.setAttribute('viewBox','0 0 80 140');
+  const polys={};
+  for(const k of Object.keys(SEGS)){const p=document.createElementNS(NS,'polygon'); p.setAttribute('points',SEGS[k]); p.setAttribute('class','seg'); svg.appendChild(p); polys[k]=p;}
+  wrap.appendChild(svg); wrap._polys=polys; return wrap;
+}
+function paint(wrap,ch){const on=new Set(MAP[ch]||''); for(const k of Object.keys(wrap._polys)) wrap._polys[k].classList.toggle('on',on.has(k));}
+
+/* ---------- flip cell ---------- */
+function makeCell(){
+  const cell=document.createElement('div'); cell.className='cell';
+  const topStatic=makeSeven(), botStatic=makeSeven(), leafTopS=makeSeven(), leafBotS=makeSeven();
+  const halfTop=document.createElement('div'); halfTop.className='half top'; halfTop.appendChild(topStatic);
+  const halfBot=document.createElement('div'); halfBot.className='half bottom'; halfBot.appendChild(botStatic);
+  const leafTop=document.createElement('div'); leafTop.className='leaf leafTop'; leafTop.appendChild(leafTopS);
+  const leafBot=document.createElement('div'); leafBot.className='leaf leafBottom'; leafBot.appendChild(leafBotS);
+  cell.append(halfTop,halfBot,leafTop,leafBot);
+  cell._s={cur:'0',topStatic,botStatic,leafTopS,leafBotS,leafTop,leafBot,t:null};
+  setCellInstant(cell,'0'); return cell;
+}
+function setCellInstant(cell,ch){
+  const s=cell._s; s.cur=ch;
+  paint(s.topStatic,ch); paint(s.botStatic,ch); paint(s.leafTopS,ch); paint(s.leafBotS,ch);
+  s.leafTop.style.transition='none'; s.leafBot.style.transition='none';
+  s.leafTop.style.transform='rotateX(0deg)'; s.leafBot.style.transform='rotateX(90deg)';
+}
+function flipCell(cell,next){
+  const s=cell._s; if(next===s.cur) return;
+  const prev=s.cur; s.cur=next;
+  paint(s.topStatic,next); paint(s.leafTopS,prev); paint(s.leafBotS,next);
+  s.leafTop.style.transition='none'; s.leafBot.style.transition='none';
+  s.leafTop.style.transform='rotateX(0deg)'; s.leafBot.style.transform='rotateX(90deg)';
+  void cell.offsetWidth;
+  s.leafTop.style.transition='transform .26s ease-in';
+  s.leafBot.style.transition='transform .26s ease-out .24s';
+  s.leafTop.style.transform='rotateX(-90deg)';
+  s.leafBot.style.transform='rotateX(0deg)';
+  clearTimeout(s.t);
+  s.t=setTimeout(()=>{ paint(s.botStatic,next); s.leafBot.style.transition='none'; s.leafBot.style.transform='rotateX(90deg)'; },540);
+}
+
+/* ---------- clock build ---------- */
+const clock=document.getElementById('clock');
+let cells=[]; let hoursMode=false;
+function buildClock(hours){
+  clock.innerHTML=''; cells=[]; clock.classList.toggle('six',hours);
+  (hours?[2,2,2]:[2,2]).forEach(n=>{
+    const g=document.createElement('div'); g.className='group';
+    for(let i=0;i<n;i++){const c=makeCell(); g.appendChild(c); cells.push(c);}
+    clock.appendChild(g);
+  });
+  hoursMode=hours;
+}
+
+/* ---------- cities ---------- */
+const CITIES=[
+  {label:'Cayenne',     tz:'America/Cayenne'},
+  {label:'New York',    tz:'America/New_York'},
+  {label:'Los Angeles', tz:'America/Los_Angeles'},
+  {label:'São Paulo',   tz:'America/Sao_Paulo'},
+  {label:'Londres',     tz:'Europe/London'},
+  {label:'Paris',       tz:'Europe/Paris'},
+  {label:'Rome',        tz:'Europe/Rome'},
+  {label:'Berlin',      tz:'Europe/Berlin'},
+  {label:'Moscou',      tz:'Europe/Moscow'},
+  {label:'Dubaï',       tz:'Asia/Dubai'},
+  {label:'Mumbai',      tz:'Asia/Kolkata'},
+  {label:'Singapour',   tz:'Asia/Singapore'},
+  {label:'Hong Kong',   tz:'Asia/Hong_Kong'},
+  {label:'Shanghai',    tz:'Asia/Shanghai'},
+  {label:'Tokyo',       tz:'Asia/Tokyo'},
+  {label:'Sydney',      tz:'Australia/Sydney'},
+];
+const tzSelect=document.getElementById('tzSelect');
+const liveTime=document.getElementById('liveTime');
+const cityLabel=document.getElementById('cityLabel');
+let currentTz='Europe/Paris', currentCity='Paris';
+CITIES.forEach(c=>{ const o=document.createElement('option'); o.value=c.tz; o.textContent=c.label; if(c.tz===currentTz)o.selected=true; tzSelect.appendChild(o); });
+function tzParts(){
+  const p=new Intl.DateTimeFormat('fr-FR',{timeZone:currentTz,hourCycle:'h23',hour:'2-digit',minute:'2-digit',second:'2-digit'}).formatToParts(new Date());
+  let h='00',m='00',s='00';
+  for(const x of p){ if(x.type==='hour')h=x.value; if(x.type==='minute')m=x.value; if(x.type==='second')s=x.value; }
+  return [h,m,s];
+}
+function tickLive(){
+  try{ const [h,m,s]=tzParts(); liveTime.textContent=h+':'+m+':'+s; }catch(e){ liveTime.textContent='--:--:--'; }
+}
+tzSelect.addEventListener('change',()=>{
+  currentTz=tzSelect.value;
+  currentCity=tzSelect.options[tzSelect.selectedIndex].textContent;
+  cityLabel.textContent=currentCity.toUpperCase();
+  tickLive(); if(mode==='clock') renderClock(true);
+});
+cityLabel.textContent=currentCity.toUpperCase();
+
+/* ---------- timer ---------- */
+const clampN=(lo,hi,v)=>Math.max(lo,Math.min(hi,v));
+let setSeconds=25*60, remaining=setSeconds, running=false, ticker=null, endAt=0;
+
+function renderTimer(instant){
+  const s=Math.max(0,Math.round(remaining));
+  let str;
+  if(hoursMode) str=String(Math.floor(s/3600)).padStart(2,'0')+String(Math.floor((s%3600)/60)).padStart(2,'0')+String(s%60).padStart(2,'0');
+  else str=String(Math.floor(s/60)).padStart(2,'0')+String(s%60).padStart(2,'0');
+  for(let i=0;i<cells.length;i++) instant?setCellInstant(cells[i],str[i]):flipCell(cells[i],str[i]);
+}
+function renderClock(instant){
+  let str='000000';
+  try{ const [h,m,s]=tzParts(); str=(h+m+s).replace(/\D/g,'').padStart(6,'0').slice(0,6); }catch(e){}
+  for(let i=0;i<6;i++){ if(cells[i]) instant?setCellInstant(cells[i],str[i]):flipCell(cells[i],str[i]); }
+}
+function syncSetLabels(){
+  document.getElementById('hVal').textContent=String(Math.floor(setSeconds/3600)).padStart(2,'0');
+  document.getElementById('mVal').textContent=String(Math.floor((setSeconds%3600)/60)).padStart(2,'0');
+  document.getElementById('sVal').textContent=String(setSeconds%60).padStart(2,'0');
+  const m=Math.floor(setSeconds/60);
+  document.querySelectorAll('.chip').forEach(c=>c.classList.toggle('active', Number(c.dataset.min)===m && setSeconds%60===0 && setSeconds<3600));
+}
+function setTime(total){
+  setSeconds=clampN(1, 9*3600+59*60+59, total);
+  const hours=setSeconds>=3600;
+  const rebuilt=(hours!==hoursMode);
+  if(rebuilt) buildClock(hours);
+  if(!running){ remaining=setSeconds; document.body.classList.remove('done'); renderTimer(rebuilt); }
+  syncSetLabels();
+}
+
+/* ---------- audio + alarm ---------- */
+let audioCtx=null, alarmMaster=null, alarmTimeout=null;
+function ensureAudio(){ if(!audioCtx){ try{audioCtx=new (window.AudioContext||window.webkitAudioContext)();}catch(e){} } if(audioCtx&&audioCtx.state==='suspended') audioCtx.resume(); }
+function beepAt(dest,at,freq,dur){
+  const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+  o.type='triangle'; o.frequency.value=freq; o.connect(g); g.connect(dest);
+  g.gain.setValueAtTime(0.0001,at); g.gain.exponentialRampToValueAtTime(0.55,at+0.02); g.gain.exponentialRampToValueAtTime(0.0001,at+dur);
+  o.start(at); o.stop(at+dur+0.03);
+}
+function startAlarm(){
+  ensureAudio(); if(!audioCtx) return;
+  alarmMaster=audioCtx.createGain(); alarmMaster.gain.value=1; alarmMaster.connect(audioCtx.destination);
+  const t0=audioCtx.currentTime, PERIOD=0.32, DUR=15; let i=0;
+  for(let t=0;t<DUR;t+=PERIOD){ beepAt(alarmMaster,t0+t,(i%2===0?988:740),0.24); i++; }
+  document.body.classList.add('alarm');
+  clearTimeout(alarmTimeout); alarmTimeout=setTimeout(stopAlarm,DUR*1000);
+}
+function stopAlarm(){
+  clearTimeout(alarmTimeout);
+  if(alarmMaster){ try{ alarmMaster.gain.cancelScheduledValues(audioCtx.currentTime); alarmMaster.gain.setValueAtTime(0,audioCtx.currentTime); alarmMaster.disconnect(); }catch(e){} alarmMaster=null; }
+  document.body.classList.remove('alarm');
+}
+
+/* ---------- run control ---------- */
+function start(){
+  if(running||mode!=='timer') return;
+  ensureAudio();
+  if(remaining<=0) remaining=setSeconds;
+  running=true; document.body.classList.remove('done'); document.body.classList.add('running');
+  document.getElementById('startBtn').textContent='PAUSE';
+  document.getElementById('statusLabel').textContent='Run';
+  endAt=Date.now()+remaining*1000;
+  ticker=setInterval(()=>{ remaining=(endAt-Date.now())/1000; if(remaining<=0){remaining=0; renderTimer(); finish(); return;} renderTimer(); },150);
+  renderTimer();
+}
+function pause(){
+  if(!running) return;
+  running=false; clearInterval(ticker);
+  document.body.classList.remove('running');
+  document.getElementById('startBtn').textContent='START';
+  document.getElementById('statusLabel').textContent='Pause';
+}
+function toggle(){ if(mode!=='timer') return; running?pause():start(); }
+function reset(){ pause(); stopAlarm(); remaining=setSeconds; document.body.classList.remove('done'); document.getElementById('statusLabel').textContent='Focus'; renderTimer(); }
+function finish(){
+  running=false; clearInterval(ticker);
+  document.body.classList.remove('running'); document.body.classList.add('done');
+  document.getElementById('startBtn').textContent='START';
+  document.getElementById('statusLabel').textContent='Done'; startAlarm();
+}
+
+/* ---------- mode ---------- */
+let mode='timer';
+function setMode(m){
+  if(m===mode) return;
+  mode=m; document.body.classList.toggle('clockmode', m==='clock');
+  document.querySelectorAll('.seg').forEach(b=>b.classList.toggle('active', b.dataset.mode===m));
+  if(m==='clock'){ pause(); buildClock(true); renderClock(true); }
+  else { buildClock(setSeconds>=3600); renderTimer(true); }
+  fitFocus();
+}
+setInterval(()=>{ if(mode==='clock') renderClock(false); }, 250);
+
+/* ---------- focus ---------- */
+function fitFocus(){
+  if(!document.body.classList.contains('focus')){ clock.style.removeProperty('--dh'); document.body.classList.remove('portrait'); return; }
+  const n=cells.length, groups=n/2;
+  const vw=window.innerWidth, vh=window.innerHeight;
+  const portrait = vh > vw;
+  document.body.classList.toggle('portrait', portrait);
+  const ratio=0.56, ig=0.10, gg=0.16, padX=28, padY=110;
+  let dhW, dhH;
+  if(!portrait){
+    const F = n*ratio + groups*ig + (groups-1)*gg;   // horizontal width in dh units
+    dhW = (vw - padX)/F;
+    dhH = (vh - padY);                                // one row tall
+  }else{
+    const Fw = 2*ratio + ig;                          // one 2-cell row wide
+    dhW = (vw - padX)/Fw;
+    const Fh = groups + (groups-1)*gg;                // stacked rows tall
+    dhH = (vh - padY)/Fh;
+  }
+  const dh=Math.max(60, Math.min(dhW, dhH));
+  clock.style.setProperty('--dh', dh+'px');
+}
+function enterFocus(){ document.body.classList.add('focus'); if(mode==='timer' && !running) start(); fitFocus(); setTimeout(fitFocus,120); try{document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();}catch(e){} }
+function exitFocus(){ document.body.classList.remove('focus'); fitFocus(); try{document.fullscreenElement&&document.exitFullscreen();}catch(e){} }
+window.addEventListener('resize',fitFocus);
+window.addEventListener('orientationchange',()=>setTimeout(fitFocus,150));
+document.addEventListener('fullscreenchange',()=>{ if(!document.fullscreenElement) document.body.classList.remove('focus'); setTimeout(fitFocus,60); });
+
+/* ---------- wiring ---------- */
+document.getElementById('modeToggle').addEventListener('click',e=>{ const b=e.target.closest('.seg'); if(b) setMode(b.dataset.mode); });
+document.getElementById('startBtn').addEventListener('click',toggle);
+document.getElementById('resetBtn').addEventListener('click',reset);
+document.getElementById('focusBtn').addEventListener('click',enterFocus);
+document.getElementById('setrow').addEventListener('click',e=>{ const b=e.target.closest('button'); if(b) setTime(setSeconds+Number(b.dataset.d)); });
+document.getElementById('presets').addEventListener('click',e=>{ const c=e.target.closest('.chip'); if(c) setTime(Number(c.dataset.min)*60); });
+document.getElementById('stopAlarmBtn').addEventListener('click',e=>{ e.stopPropagation(); stopAlarm(); });
+document.getElementById('alarmLayer').addEventListener('click',stopAlarm);
+clock.addEventListener('click',()=>{ if(document.body.classList.contains('alarm')){ stopAlarm(); return; } if(document.body.classList.contains('focus')) exitFocus(); });
+document.addEventListener('keydown',e=>{
+  if(document.body.classList.contains('alarm')){ stopAlarm(); return; }
+  if(e.key==='Escape'){ exitFocus(); return; }
+  if(e.code==='Space'){ e.preventDefault(); toggle(); }
+  else if(e.key.toLowerCase()==='r'){ reset(); }
+  else if(e.key.toLowerCase()==='f'){ document.body.classList.contains('focus')?exitFocus():enterFocus(); }
+  else if(e.key==='ArrowUp' && !running && mode==='timer'){ e.preventDefault(); setTime(setSeconds+60); }
+  else if(e.key==='ArrowDown' && !running && mode==='timer'){ e.preventDefault(); setTime(setSeconds-60); }
+});
+
+/* ---------- init ---------- */
+buildClock(false); syncSetLabels(); renderTimer(true);
+tickLive(); setInterval(tickLive,1000);
+</script>
+</body>
+</html>
